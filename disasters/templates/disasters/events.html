@@ -1,0 +1,480 @@
+{% extends "disasters/base.html" %}
+{% block title %}Events - Disaster Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .filter-dropdown {
+        background: var(--bg-dark);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        padding: 0.35rem 0.75rem;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .filter-dropdown:focus {
+        outline: none;
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+    .filter-dropdown option { background: var(--bg-card); color: var(--text-primary); }
+    .eq-section { display: none; }
+    .eq-section.active { display: block; }
+    .sub-section { display: none; }
+    .sub-section.active { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1"><i class="fas fa-list text-info me-2"></i>Disaster Events</h4>
+        <p class="text-secondary mb-0">All active disaster events by type</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <input type="text" class="search-input" id="eventSearch" placeholder="Search events..." oninput="filterEvents()" style="width:200px;">
+        <button class="btn btn-outline-action" onclick="runFetch()">
+            <i class="fas fa-sync me-1"></i> Refresh Data
+        </button>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-pills mb-4 gap-2" id="eventTabs">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#earthquakes">
+            <i class="fas fa-house-damage me-1"></i> Earthquakes
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#floods">
+            <i class="fas fa-water me-1"></i> Floods
+            <span class="badge bg-info ms-1">{{ flood_total }}</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#cyclones">
+            <i class="fas fa-wind me-1"></i> Cyclones &amp; Storms
+            <span class="badge bg-primary ms-1">{{ cyclone_total }}</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#volcanoes">
+            <i class="fas fa-mountain me-1"></i> Volcanoes
+            <span class="badge bg-danger ms-1">{{ volcano_total }}</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#wildfires">
+            <i class="fas fa-fire me-1"></i> Wildfires
+            <span class="badge bg-warning text-dark ms-1">{{ wildfire_total }}</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#droughts">
+            <i class="fas fa-sun me-1"></i> Droughts
+            <span class="badge bg-secondary ms-1">{{ drought_total }}</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#weather">
+            <i class="fas fa-cloud-bolt me-1"></i> Weather Alerts
+            <span class="badge bg-primary ms-1">{{ weather_total }}</span>
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+
+<!-- ══════════ EARTHQUAKES ══════════ -->
+<div class="tab-pane fade show active" id="earthquakes">
+    <div class="card-dark">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-house-damage me-2 text-danger"></i>Earthquakes</span>
+            <div class="d-flex align-items-center gap-2">
+                <label class="text-secondary mb-0" style="font-size:0.85rem;">Filter:</label>
+                <select class="filter-dropdown" id="eqFilter" onchange="switchEqFilter()">
+                    <option value="hour">Last Hour ({{ earthquakes_hour|length }})</option>
+                    <option value="day">Last 24 Hours ({{ earthquakes_day|length }})</option>
+                    <option value="month">Last 30 Days ({{ earthquakes_month|length }})</option>
+                    <option value="india">India &amp; Nearby ({{ earthquakes_india|length }})</option>
+                </select>
+            </div>
+        </div>
+        {% for section_id, eq_list, empty_msg in eq_sections %}
+        <div class="eq-section {% if section_id == 'hour' %}active{% endif %}" id="eq-{{ section_id }}">
+        {% endfor %}
+        <!-- Last Hour -->
+        <div class="eq-section active" id="eq-hour">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Magnitude</th><th>Location</th><th>Depth</th><th>Time</th><th>Tsunami</th><th>Significance</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for eq in earthquakes_hour %}
+                        <tr>
+                            <td><span class="fw-bold {% if eq.magnitude >= 6 %}text-danger{% elif eq.magnitude >= 4.5 %}text-warning{% else %}text-success{% endif %}" style="font-size:1.1rem;">M{{ eq.magnitude }}</span> <span class="text-secondary" style="font-size:0.75rem;">{{ eq.magnitude_type }}</span></td>
+                            <td>{{ eq.place }}</td>
+                            <td>{{ eq.depth }} km</td>
+                            <td><span style="font-size:0.85rem;">{{ eq.event_time|date:"M d, Y" }}</span><br><span class="text-secondary" style="font-size:0.75rem;">{{ eq.event_time|time:"H:i" }} UTC</span></td>
+                            <td>{% if eq.tsunami %}<span class="badge bg-danger"><i class="fas fa-water me-1"></i>Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}</td>
+                            <td>{{ eq.significance }}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{{ eq.latitude }}, {{ eq.longitude }}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No earthquakes in the last hour</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Last 24 Hours -->
+        <div class="eq-section" id="eq-day">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Magnitude</th><th>Location</th><th>Depth</th><th>Time</th><th>Tsunami</th><th>Significance</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for eq in earthquakes_day %}
+                        <tr>
+                            <td><span class="fw-bold {% if eq.magnitude >= 6 %}text-danger{% elif eq.magnitude >= 4.5 %}text-warning{% else %}text-success{% endif %}" style="font-size:1.1rem;">M{{ eq.magnitude }}</span> <span class="text-secondary" style="font-size:0.75rem;">{{ eq.magnitude_type }}</span></td>
+                            <td>{{ eq.place }}</td><td>{{ eq.depth }} km</td>
+                            <td><span style="font-size:0.85rem;">{{ eq.event_time|date:"M d, Y" }}</span><br><span class="text-secondary" style="font-size:0.75rem;">{{ eq.event_time|time:"H:i" }} UTC</span></td>
+                            <td>{% if eq.tsunami %}<span class="badge bg-danger"><i class="fas fa-water me-1"></i>Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}</td>
+                            <td>{{ eq.significance }}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{{ eq.latitude }}, {{ eq.longitude }}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No earthquakes in the last 24 hours</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Last 30 Days -->
+        <div class="eq-section" id="eq-month">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Magnitude</th><th>Location</th><th>Depth</th><th>Time</th><th>Tsunami</th><th>Significance</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for eq in earthquakes_month %}
+                        <tr>
+                            <td><span class="fw-bold {% if eq.magnitude >= 6 %}text-danger{% elif eq.magnitude >= 4.5 %}text-warning{% else %}text-success{% endif %}" style="font-size:1.1rem;">M{{ eq.magnitude }}</span> <span class="text-secondary" style="font-size:0.75rem;">{{ eq.magnitude_type }}</span></td>
+                            <td>{{ eq.place }}</td><td>{{ eq.depth }} km</td>
+                            <td><span style="font-size:0.85rem;">{{ eq.event_time|date:"M d, Y" }}</span><br><span class="text-secondary" style="font-size:0.75rem;">{{ eq.event_time|time:"H:i" }} UTC</span></td>
+                            <td>{% if eq.tsunami %}<span class="badge bg-danger"><i class="fas fa-water me-1"></i>Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}</td>
+                            <td>{{ eq.significance }}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{{ eq.latitude }}, {{ eq.longitude }}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No earthquakes in the last 30 days</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- India & Nearby -->
+        <div class="eq-section" id="eq-india">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Magnitude</th><th>Location</th><th>Depth</th><th>Time</th><th>Tsunami</th><th>Significance</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for eq in earthquakes_india %}
+                        <tr>
+                            <td><span class="fw-bold {% if eq.magnitude >= 6 %}text-danger{% elif eq.magnitude >= 4.5 %}text-warning{% else %}text-success{% endif %}" style="font-size:1.1rem;">M{{ eq.magnitude }}</span> <span class="text-secondary" style="font-size:0.75rem;">{{ eq.magnitude_type }}</span></td>
+                            <td>{{ eq.place }}</td><td>{{ eq.depth }} km</td>
+                            <td><span style="font-size:0.85rem;">{{ eq.event_time|date:"M d, Y" }}</span><br><span class="text-secondary" style="font-size:0.75rem;">{{ eq.event_time|time:"H:i" }} UTC</span></td>
+                            <td>{% if eq.tsunami %}<span class="badge bg-danger"><i class="fas fa-water me-1"></i>Yes</span>{% else %}<span class="text-secondary">No</span>{% endif %}</td>
+                            <td>{{ eq.significance }}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{{ eq.latitude }}, {{ eq.longitude }}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No earthquakes in India &amp; nearby region</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ FLOODS ══════════ -->
+<div class="tab-pane fade" id="floods">
+    <div class="card-dark">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-water me-2 text-info"></i>Floods</span>
+            <div class="d-flex align-items-center gap-2">
+                <label class="text-secondary mb-0" style="font-size:0.85rem;">Source:</label>
+                <select class="filter-dropdown" id="floodFilter" onchange="switchSubSection('floodFilter', 'flood')">
+                    <option value="gdacs">Flood Events ({{ gdacs_floods|length }})</option>
+                    <option value="rain">Heavy Rainfall &ge;50mm ({{ heavy_rain_alerts|length }})</option>
+                </select>
+            </div>
+        </div>
+        <!-- GDACS Floods -->
+        <div class="sub-section active" id="flood-gdacs">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Alert Level</th><th>Title</th><th>Country</th><th>Date</th><th>Severity</th><th>Population Affected</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for ev in gdacs_floods %}
+                        <tr>
+                            <td><span class="badge {% if ev.alert_level == 'Red' %}bg-danger{% elif ev.alert_level == 'Orange' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ ev.alert_level }}</span></td>
+                            <td>{{ ev.title }}{% if ev.source_url %} <a href="{{ ev.source_url }}" target="_blank" class="text-info ms-1"><i class="fas fa-external-link-alt" style="font-size:0.7rem;"></i></a>{% endif %}</td>
+                            <td>{{ ev.country|default:"-" }}</td>
+                            <td>{% if ev.event_date %}{{ ev.event_date|date:"M d, Y H:i" }}{% else %}<span class="text-secondary">-</span>{% endif %}</td>
+                            <td>{% if ev.severity is not None %}{{ ev.severity }}{% else %}-{% endif %}</td>
+                            <td>{% if ev.population_affected is not None %}{{ ev.population_affected|floatformat:0 }}{% else %}-{% endif %}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{% if ev.latitude %}{{ ev.latitude }}, {{ ev.longitude }}{% else %}-{% endif %}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No flood events</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Heavy Rainfall -->
+        <div class="sub-section" id="flood-rain">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Severity</th><th>Location</th><th>Rainfall</th><th>Wind Speed</th><th>Humidity</th><th>Pressure</th><th>Temperature</th></tr></thead>
+                    <tbody>
+                        {% for w in heavy_rain_alerts %}
+                        <tr>
+                            <td><span class="risk-badge risk-{% if w.severity == 'extreme' %}CRITICAL{% elif w.severity == 'severe' %}HIGH{% elif w.severity == 'moderate' %}MEDIUM{% else %}LOW{% endif %}">{{ w.severity }}</span></td>
+                            <td class="fw-semibold">{{ w.location_name }}</td>
+                            <td><span class="fw-bold text-danger">{{ w.rainfall }} mm</span></td>
+                            <td>{% if w.wind_speed is not None %}{{ w.wind_speed }} m/s{% else %}-{% endif %}</td>
+                            <td>{% if w.humidity is not None %}{{ w.humidity }}%{% else %}-{% endif %}</td>
+                            <td>{% if w.pressure is not None %}{{ w.pressure }} hPa{% else %}-{% endif %}</td>
+                            <td>{% if w.temperature is not None %}{{ w.temperature }}°C{% else %}-{% endif %}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No heavy rainfall alerts</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ CYCLONES & STORMS ══════════ -->
+<div class="tab-pane fade" id="cyclones">
+    <div class="card-dark">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-wind me-2 text-primary"></i>Cyclones &amp; Storms</span>
+            <div class="d-flex align-items-center gap-2">
+                <label class="text-secondary mb-0" style="font-size:0.85rem;">Source:</label>
+                <select class="filter-dropdown" id="cycloneFilter" onchange="switchSubSection('cycloneFilter', 'cyclone')">
+                    <option value="gdacs">Tropical Cyclones ({{ gdacs_cyclones|length }})</option>
+                    <option value="weather">Storm Alerts ({{ storm_alerts|length }})</option>
+                </select>
+            </div>
+        </div>
+        <!-- GDACS Cyclones -->
+        <div class="sub-section active" id="cyclone-gdacs">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Alert Level</th><th>Title</th><th>Country</th><th>Date</th><th>Severity</th><th>Population Affected</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for ev in gdacs_cyclones %}
+                        <tr>
+                            <td><span class="badge {% if ev.alert_level == 'Red' %}bg-danger{% elif ev.alert_level == 'Orange' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ ev.alert_level }}</span></td>
+                            <td>{{ ev.title }}{% if ev.source_url %} <a href="{{ ev.source_url }}" target="_blank" class="text-info ms-1"><i class="fas fa-external-link-alt" style="font-size:0.7rem;"></i></a>{% endif %}</td>
+                            <td>{{ ev.country|default:"-" }}</td>
+                            <td>{% if ev.event_date %}{{ ev.event_date|date:"M d, Y H:i" }}{% else %}<span class="text-secondary">-</span>{% endif %}</td>
+                            <td>{% if ev.severity is not None %}{{ ev.severity }}{% else %}-{% endif %}</td>
+                            <td>{% if ev.population_affected is not None %}{{ ev.population_affected|floatformat:0 }}{% else %}-{% endif %}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{% if ev.latitude %}{{ ev.latitude }}, {{ ev.longitude }}{% else %}-{% endif %}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No tropical cyclone events</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Storm Weather Alerts -->
+        <div class="sub-section" id="cyclone-weather">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Severity</th><th>Location</th><th>Event Type</th><th>Wind Speed</th><th>Pressure</th><th>Rainfall</th><th>Temperature</th></tr></thead>
+                    <tbody>
+                        {% for w in storm_alerts %}
+                        <tr>
+                            <td><span class="risk-badge risk-{% if w.severity == 'extreme' %}CRITICAL{% elif w.severity == 'severe' %}HIGH{% elif w.severity == 'moderate' %}MEDIUM{% else %}LOW{% endif %}">{{ w.severity }}</span></td>
+                            <td class="fw-semibold">{{ w.location_name }}</td>
+                            <td>{{ w.event_type }}</td>
+                            <td>{% if w.wind_speed is not None %}{{ w.wind_speed }} m/s{% else %}-{% endif %}</td>
+                            <td>{% if w.pressure is not None %}{{ w.pressure }} hPa{% else %}-{% endif %}</td>
+                            <td>{% if w.rainfall is not None %}{{ w.rainfall }} mm{% else %}-{% endif %}</td>
+                            <td>{% if w.temperature is not None %}{{ w.temperature }}°C{% else %}-{% endif %}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No storm alerts</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ VOLCANOES ══════════ -->
+<div class="tab-pane fade" id="volcanoes">
+    <div class="card-dark">
+        <div class="card-header">
+            <i class="fas fa-mountain me-2 text-danger"></i>Volcanoes
+            <span class="badge bg-danger ms-2">{{ volcano_total }}</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-dark-custom mb-0">
+                <thead><tr><th>Alert Level</th><th>Title</th><th>Country</th><th>Date</th><th>Severity</th><th>Population Affected</th><th>Coordinates</th></tr></thead>
+                <tbody>
+                    {% for ev in volcano_events %}
+                    <tr>
+                        <td><span class="badge {% if ev.alert_level == 'Red' %}bg-danger{% elif ev.alert_level == 'Orange' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ ev.alert_level }}</span></td>
+                        <td>{{ ev.title }}{% if ev.source_url %} <a href="{{ ev.source_url }}" target="_blank" class="text-info ms-1"><i class="fas fa-external-link-alt" style="font-size:0.7rem;"></i></a>{% endif %}</td>
+                        <td>{{ ev.country|default:"-" }}</td>
+                        <td>{% if ev.event_date %}{{ ev.event_date|date:"M d, Y H:i" }}{% else %}<span class="text-secondary">-</span>{% endif %}</td>
+                        <td>{% if ev.severity is not None %}{{ ev.severity }}{% else %}-{% endif %}</td>
+                        <td>{% if ev.population_affected is not None %}{{ ev.population_affected|floatformat:0 }}{% else %}-{% endif %}</td>
+                        <td class="text-secondary" style="font-size:0.8rem;">{% if ev.latitude %}{{ ev.latitude }}, {{ ev.longitude }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No volcano events</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ WILDFIRES ══════════ -->
+<div class="tab-pane fade" id="wildfires">
+    <div class="card-dark">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-fire me-2 text-warning"></i>Wildfires</span>
+            <div class="d-flex align-items-center gap-2">
+                <label class="text-secondary mb-0" style="font-size:0.85rem;">Source:</label>
+                <select class="filter-dropdown" id="wildfireFilter" onchange="switchSubSection('wildfireFilter', 'wildfire')">
+                    <option value="firms">Active Fire Detections ({{ wildfire_firms|length }})</option>
+                    <option value="gdacs">Wildfire Events ({{ gdacs_wildfires|length }})</option>
+                </select>
+            </div>
+        </div>
+        <!-- FIRMS -->
+        <div class="sub-section active" id="wildfire-firms">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Date</th><th>Coordinates</th><th>Brightness (K)</th><th>FRP (MW)</th><th>Confidence</th><th>Satellite</th><th>Country</th></tr></thead>
+                    <tbody>
+                        {% for fire in wildfire_firms %}
+                        <tr>
+                            <td><span style="font-size:0.85rem;">{{ fire.acq_date|date:"M d, Y" }}</span>{% if fire.acq_time %}<br><span class="text-secondary" style="font-size:0.75rem;">{{ fire.acq_time }} UTC</span>{% endif %}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{{ fire.latitude }}, {{ fire.longitude }}</td>
+                            <td>{% if fire.brightness is not None %}{{ fire.brightness }}{% else %}-{% endif %}</td>
+                            <td>{% if fire.frp is not None %}<span class="fw-bold {% if fire.frp >= 100 %}text-danger{% elif fire.frp >= 50 %}text-warning{% else %}text-info{% endif %}">{{ fire.frp }}</span>{% else %}-{% endif %}</td>
+                            <td>{% if fire.confidence == 'h' or fire.confidence == 'high' %}<span class="badge bg-danger">High</span>{% elif fire.confidence == 'n' or fire.confidence == 'nominal' %}<span class="badge bg-warning text-dark">Nominal</span>{% elif fire.confidence == 'l' or fire.confidence == 'low' %}<span class="badge bg-secondary">Low</span>{% else %}{{ fire.confidence|default:"-" }}{% endif %}</td>
+                            <td>{{ fire.satellite|default:"-" }}</td>
+                            <td>{{ fire.country|default:"-" }}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No wildfire detections &mdash; configure NASA_FIRMS_MAP_KEY in settings to enable</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- GDACS Wildfires -->
+        <div class="sub-section" id="wildfire-gdacs">
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead><tr><th>Alert Level</th><th>Title</th><th>Country</th><th>Date</th><th>Severity</th><th>Population Affected</th><th>Coordinates</th></tr></thead>
+                    <tbody>
+                        {% for ev in gdacs_wildfires %}
+                        <tr>
+                            <td><span class="badge {% if ev.alert_level == 'Red' %}bg-danger{% elif ev.alert_level == 'Orange' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ ev.alert_level }}</span></td>
+                            <td>{{ ev.title }}{% if ev.source_url %} <a href="{{ ev.source_url }}" target="_blank" class="text-info ms-1"><i class="fas fa-external-link-alt" style="font-size:0.7rem;"></i></a>{% endif %}</td>
+                            <td>{{ ev.country|default:"-" }}</td>
+                            <td>{% if ev.event_date %}{{ ev.event_date|date:"M d, Y H:i" }}{% else %}<span class="text-secondary">-</span>{% endif %}</td>
+                            <td>{% if ev.severity is not None %}{{ ev.severity }}{% else %}-{% endif %}</td>
+                            <td>{% if ev.population_affected is not None %}{{ ev.population_affected|floatformat:0 }}{% else %}-{% endif %}</td>
+                            <td class="text-secondary" style="font-size:0.8rem;">{% if ev.latitude %}{{ ev.latitude }}, {{ ev.longitude }}{% else %}-{% endif %}</td>
+                        </tr>
+                        {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No wildfire events</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ DROUGHTS ══════════ -->
+<div class="tab-pane fade" id="droughts">
+    <div class="card-dark">
+        <div class="card-header">
+            <i class="fas fa-sun me-2 text-warning"></i>Droughts
+            <span class="badge bg-secondary ms-2">{{ drought_total }}</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-dark-custom mb-0">
+                <thead><tr><th>Alert Level</th><th>Title</th><th>Country</th><th>Date</th><th>Severity</th><th>Population Affected</th><th>Coordinates</th></tr></thead>
+                <tbody>
+                    {% for ev in drought_events %}
+                    <tr>
+                        <td><span class="badge {% if ev.alert_level == 'Red' %}bg-danger{% elif ev.alert_level == 'Orange' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ ev.alert_level }}</span></td>
+                        <td>{{ ev.title }}{% if ev.source_url %} <a href="{{ ev.source_url }}" target="_blank" class="text-info ms-1"><i class="fas fa-external-link-alt" style="font-size:0.7rem;"></i></a>{% endif %}</td>
+                        <td>{{ ev.country|default:"-" }}</td>
+                        <td>{% if ev.event_date %}{{ ev.event_date|date:"M d, Y H:i" }}{% else %}<span class="text-secondary">-</span>{% endif %}</td>
+                        <td>{% if ev.severity is not None %}{{ ev.severity }}{% else %}-{% endif %}</td>
+                        <td>{% if ev.population_affected is not None %}{{ ev.population_affected|floatformat:0 }}{% else %}-{% endif %}</td>
+                        <td class="text-secondary" style="font-size:0.8rem;">{% if ev.latitude %}{{ ev.latitude }}, {{ ev.longitude }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="7" class="text-center text-secondary py-4">No drought events</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════ WEATHER ALERTS ══════════ -->
+<div class="tab-pane fade" id="weather">
+    <div class="card-dark">
+        <div class="card-header">
+            <i class="fas fa-cloud-bolt me-2 text-info"></i>Weather Alerts
+            <span class="badge bg-info ms-2">{{ weather_total }}</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-dark-custom mb-0">
+                <thead><tr><th>Severity</th><th>Location</th><th>Event Type</th><th>Temperature</th><th>Wind Speed</th><th>Humidity</th><th>Rainfall</th><th>Pressure</th></tr></thead>
+                <tbody>
+                    {% for w in weather_alerts %}
+                    <tr>
+                        <td><span class="risk-badge risk-{% if w.severity == 'extreme' %}CRITICAL{% elif w.severity == 'severe' %}HIGH{% elif w.severity == 'moderate' %}MEDIUM{% else %}LOW{% endif %}">{{ w.severity }}</span></td>
+                        <td class="fw-semibold">{{ w.location_name }}</td>
+                        <td>{{ w.event_type }}</td>
+                        <td>{% if w.temperature is not None %}{{ w.temperature }}°C{% else %}-{% endif %}</td>
+                        <td>{% if w.wind_speed is not None %}{{ w.wind_speed }} m/s{% else %}-{% endif %}</td>
+                        <td>{% if w.humidity is not None %}{{ w.humidity }}%{% else %}-{% endif %}</td>
+                        <td>{% if w.rainfall is not None %}{{ w.rainfall }} mm{% else %}-{% endif %}</td>
+                        <td>{% if w.pressure is not None %}{{ w.pressure }} hPa{% else %}-{% endif %}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="8" class="text-center text-secondary py-4">No weather alerts</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function switchEqFilter() {
+        const val = document.getElementById('eqFilter').value;
+        document.querySelectorAll('.eq-section').forEach(s => s.classList.remove('active'));
+        document.getElementById('eq-' + val).classList.add('active');
+    }
+
+    function switchSubSection(filterId, prefix) {
+        const val = document.getElementById(filterId).value;
+        const tab = document.getElementById(filterId).closest('.tab-pane');
+        tab.querySelectorAll('.sub-section').forEach(s => s.classList.remove('active'));
+        document.getElementById(prefix + '-' + val).classList.add('active');
+    }
+
+    function filterEvents() {
+        const query = document.getElementById('eventSearch').value.toLowerCase();
+        document.querySelectorAll('.tab-content tbody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+        });
+    }
+
+    async function runFetch() {
+        const data = await apiCall('/api/fetch/', 'Fetching latest data...');
+        if (data) location.reload();
+    }
+</script>
+{% endblock %}

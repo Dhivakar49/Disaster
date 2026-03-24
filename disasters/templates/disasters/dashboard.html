@@ -1,0 +1,575 @@
+{% extends "disasters/base.html" %}
+{% block title %}Dashboard - Disaster Monitor{% endblock %}
+
+{% block alerts %}
+{% if critical_risks %}
+<div class="alert-banner alert-banner-critical">
+    <i class="fas fa-radiation alert-icon" style="color:var(--risk-critical);"></i>
+    <div class="alert-content">
+        <div class="alert-title" style="color:var(--risk-critical);">
+            CRITICAL ALERT — {{ critical_risks|length }} location{{ critical_risks|length|pluralize }} at critical risk
+        </div>
+        <div class="alert-desc">Immediate attention required. These areas show extremely high disaster probability.</div>
+        <div class="alert-locations">
+            {% for r in critical_risks %}
+            <span class="alert-location-tag" style="color:var(--risk-critical);">
+                <i class="fas fa-map-marker-alt me-1"></i>{{ r.location }} ({{ r.probability_pct }}%)
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    <button class="alert-dismiss" onclick="dismissAlert(this)" title="Dismiss">&times;</button>
+</div>
+{% endif %}
+
+{% if high_risks %}
+<div class="alert-banner alert-banner-high">
+    <i class="fas fa-exclamation-triangle alert-icon" style="color:var(--risk-high);"></i>
+    <div class="alert-content">
+        <div class="alert-title" style="color:var(--risk-high);">
+            HIGH RISK — {{ high_risks|length }} location{{ high_risks|length|pluralize }} flagged
+        </div>
+        <div class="alert-desc">These areas have elevated disaster risk and should be monitored closely.</div>
+        <div class="alert-locations">
+            {% for r in high_risks %}
+            <span class="alert-location-tag" style="color:var(--risk-high);">
+                <i class="fas fa-map-marker-alt me-1"></i>{{ r.location }} ({{ r.probability_pct }}%)
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    <button class="alert-dismiss" onclick="dismissAlert(this)" title="Dismiss">&times;</button>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Header row -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-1"><i class="fas fa-shield-alt text-primary me-2"></i>Risk Dashboard</h4>
+        <p class="text-secondary mb-0">Real-time disaster risk monitoring across all data sources</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-action" onclick="openWeatherSearch()">
+            <i class="fas fa-cloud-sun me-1"></i> Weather
+        </button>
+        <button class="btn btn-outline-action" onclick="runFetch()">
+            <i class="fas fa-download me-1"></i> Fetch Data
+        </button>
+        <button class="btn btn-action" onclick="runPipeline()">
+            <i class="fas fa-play me-1"></i> Run Pipeline
+        </button>
+    </div>
+</div>
+
+<!-- Stats cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="stat-card" style="border-left:3px solid var(--risk-critical);">
+            <div class="stat-icon text-danger"><i class="fas fa-exclamation-triangle"></i></div>
+            <div class="stat-value text-danger">{{ stats.critical_count }}</div>
+            <div class="stat-label">Critical Risk</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card" style="border-left:3px solid var(--risk-high);">
+            <div class="stat-icon" style="color:var(--risk-high);"><i class="fas fa-exclamation-circle"></i></div>
+            <div class="stat-value" style="color: var(--risk-high)">{{ stats.high_count }}</div>
+            <div class="stat-label">High Risk</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card" style="border-left:3px solid var(--risk-medium);">
+            <div class="stat-icon text-warning"><i class="fas fa-info-circle"></i></div>
+            <div class="stat-value text-warning">{{ stats.medium_count }}</div>
+            <div class="stat-label">Medium Risk</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card" style="border-left:3px solid var(--accent-green);">
+            <div class="stat-icon text-success"><i class="fas fa-map-marker-alt"></i></div>
+            <div class="stat-value text-success">{{ stats.total_locations }}</div>
+            <div class="stat-label">Locations Monitored</div>
+        </div>
+    </div>
+</div>
+
+<!-- Second stats row -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon text-info"><i class="fas fa-house-damage"></i></div>
+            <div class="stat-value text-info">{{ stats.total_earthquakes }}</div>
+            <div class="stat-label">Earthquakes</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon text-info"><i class="fas fa-cloud-bolt"></i></div>
+            <div class="stat-value text-info">{{ stats.total_weather }}</div>
+            <div class="stat-label">Weather Alerts</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon text-info"><i class="fas fa-house-flood-water"></i></div>
+            <div class="stat-value text-info">{{ stats.total_gdacs }}</div>
+            <div class="stat-label">GDACS Events</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="stat-card" {% if stats.anomaly_count > 0 %}style="border-left:3px solid var(--risk-critical);"{% endif %}>
+            <div class="stat-icon" style="color: var(--risk-critical);"><i class="fas fa-bolt"></i></div>
+            <div class="stat-value" style="color: var(--risk-critical)">{{ stats.anomaly_count }}</div>
+            <div class="stat-label">Anomalies</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Map -->
+    <div class="col-lg-7">
+        <div class="card-dark">
+            <div class="card-header d-flex justify-content-between align-items-center p-3">
+                <span><i class="fas fa-globe me-2"></i>Live Event Map <span class="text-secondary" style="font-size:0.75rem;">— last 24 hours</span></span>
+                <div class="d-flex gap-2 align-items-center" style="font-size:0.78rem;">
+                    <button onclick="toggleLayer('quakes')" id="btn-quakes" class="map-layer-btn active" style="background:rgba(59,130,246,0.2);border:1px solid #3b82f6;color:#3b82f6;">
+                        <i class="fas fa-house-damage me-1"></i>Earthquakes
+                    </button>
+                    <button onclick="toggleLayer('gdacs')" id="btn-gdacs" class="map-layer-btn active" style="background:rgba(249,115,22,0.2);border:1px solid #f97316;color:#f97316;">
+                        <i class="fas fa-water me-1"></i>Disasters
+                    </button>
+                    <button onclick="toggleLayer('fires')" id="btn-fires" class="map-layer-btn active" style="background:rgba(239,68,68,0.2);border:1px solid #ef4444;color:#ef4444;">
+                        <i class="fas fa-fire me-1"></i>Fires
+                    </button>
+                </div>
+            </div>
+            <div style="position:relative;">
+                <div id="map" style="height:380px;border-radius:0 0 12px 12px;"></div>
+                <div id="mapLegend" style="position:absolute;bottom:12px;left:12px;background:rgba(15,23,42,0.9);border:1px solid #334155;border-radius:8px;padding:8px 12px;font-size:0.72rem;z-index:1000;">
+                    <div class="mb-1" style="color:#94a3b8;font-weight:600;">MAGNITUDE</div>
+                    <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:5px;"></span>&lt; 3.0</div>
+                    <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#eab308;margin-right:5px;"></span>3.0 – 4.4</div>
+                    <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f97316;margin-right:5px;"></span>4.5 – 5.9</div>
+                    <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:5px;"></span>6.0+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk breakdown chart -->
+    <div class="col-lg-5">
+        <div class="card-dark mb-4">
+            <div class="card-header p-3">
+                <i class="fas fa-chart-doughnut me-2"></i>Risk Distribution
+            </div>
+            <div class="p-3">
+                <canvas id="riskChart" height="220"></canvas>
+            </div>
+        </div>
+        <div class="card-dark">
+            <div class="card-header p-3">
+                <i class="fas fa-chart-bar me-2"></i>Top 5 Risk Scores
+            </div>
+            <div class="p-3">
+                <canvas id="topRiskChart" height="180"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Table -->
+<div class="card-dark mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center p-3">
+        <span><i class="fas fa-ranking-star me-2"></i>High Risk Locations</span>
+        <div class="d-flex align-items-center gap-3">
+            <input type="text" class="search-input" id="riskSearch" placeholder="Search locations..." oninput="filterRiskTable()" style="width:200px;">
+            <span class="text-secondary" style="font-size:0.8rem;">
+                Ranked by priority
+            </span>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-dark-custom mb-0">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Location</th>
+                    <th>Risk Level</th>
+                    <th>Probability</th>
+                    <th>Earthquake</th>
+                    <th>Weather</th>
+                    <th>Anomaly</th>
+                    <th>Contributing Factors</th>
+                </tr>
+            </thead>
+            <tbody id="riskTableBody">
+                {% for r in risks %}
+                <tr>
+                    <td>
+                        <span class="rank-circle {% if r.rank == 1 %}rank-1{% elif r.rank == 2 %}rank-2{% elif r.rank == 3 %}rank-3{% else %}rank-default{% endif %}">
+                            {{ r.rank }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="fw-semibold">{{ r.location }}</div>
+                        <div class="text-secondary" style="font-size:0.75rem;">
+                            {{ r.latitude }}°, {{ r.longitude }}°
+                        </div>
+                    </td>
+                    <td>
+                        <span class="risk-badge risk-{{ r.risk_level }}">{{ r.risk_level }}</span>
+                    </td>
+                    <td>
+                        <div class="fw-semibold">{{ r.risk_probability }}</div>
+                        <div class="progress-bar-risk mt-1" style="width:80px;">
+                            <div class="fill" style="width:{{ r.probability_pct }}%;background:{{ r.risk_color }};"></div>
+                        </div>
+                    </td>
+                    <td>
+                        <span style="color:{{ r.eq_color }}">{{ r.earthquake_risk }}</span>
+                    </td>
+                    <td>
+                        <span style="color:{{ r.wx_color }}">{{ r.weather_risk }}</span>
+                    </td>
+                    <td>
+                        {% if r.anomaly_detected %}
+                            <span class="anomaly-badge"><i class="fas fa-bolt me-1"></i>Yes</span>
+                        {% else %}
+                            <span class="text-secondary">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% for factor in r.contributing_factors %}
+                            <span class="factor-tag">{{ factor }}</span>
+                        {% empty %}
+                            <span class="text-secondary">-</span>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" class="text-center text-secondary py-4">
+                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                        No risk data yet. Click <strong>Run Pipeline</strong> to start.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.map-layer-btn {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.map-layer-btn:hover { opacity: 0.8; }
+</style>
+{% endblock %}
+{% block extra_js %}
+<div id="weatherModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:28px;width:100%;max-width:480px;margin:16px;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0"><i class="fas fa-cloud-sun text-info me-2"></i>Weather Search</h5>
+            <button onclick="closeWeatherModal()" style="background:none;border:none;color:#94a3b8;font-size:1.4rem;cursor:pointer;">&times;</button>
+        </div>
+        <div class="d-flex gap-2 mb-3">
+            <input id="weatherPlaceInput" type="text" class="search-input flex-grow-1"
+                placeholder="Enter city or place (e.g. Chennai, Tokyo)"
+                onkeydown="if(event.key==='Enter') searchWeather()"
+                style="padding:10px 14px;">
+            <button class="btn btn-action" onclick="searchWeather()" style="white-space:nowrap;">
+                <i class="fas fa-search me-1"></i> Search
+            </button>
+        </div>
+        <div id="weatherResult" style="min-height:60px;"></div>
+    </div>
+</div>
+
+<script>
+    const risks = {{ risks_json|safe }};
+    const stats = {{ stats_json|safe }};
+    const recentQuakes = {{ recent_quakes_json|safe }};
+    const recentGdacs = {{ recent_gdacs_json|safe }};
+    const recentFires = {{ recent_wildfires_json|safe }};
+
+    // --- Map setup ---
+    const map = L.map('map', {zoomControl: true}).setView([20, 0], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 18,
+    }).addTo(map);
+
+    const quakeLayer = L.layerGroup().addTo(map);
+    const gdacsLayer = L.layerGroup().addTo(map);
+    const fireLayer  = L.layerGroup().addTo(map);
+
+    function quakeColor(mag) {
+        if (mag >= 6.0) return '#ef4444';
+        if (mag >= 4.5) return '#f97316';
+        if (mag >= 3.0) return '#eab308';
+        return '#22c55e';
+    }
+
+    recentQuakes.forEach(q => {
+        const color = quakeColor(q.magnitude);
+        const radius = Math.max(5, Math.min(22, q.magnitude * 3.5));
+        L.circleMarker([q.latitude, q.longitude], {
+            radius, fillColor: color, color: '#0f172a',
+            weight: 1.5, opacity: 1, fillOpacity: 0.82,
+        }).bindPopup(`
+            <div style="min-width:190px;font-family:system-ui;">
+                <div style="font-size:1.15rem;font-weight:800;color:${color};">M${q.magnitude}</div>
+                <div style="font-weight:600;margin:3px 0;font-size:0.9rem;">${q.place}</div>
+                <hr style="border-color:#334155;margin:5px 0;">
+                <div style="font-size:0.82rem;color:#94a3b8;">Depth: <span style="color:#e2e8f0;">${q.depth} km</span></div>
+                <div style="font-size:0.82rem;color:#94a3b8;">Time: <span style="color:#e2e8f0;">${q.event_time}</span></div>
+                ${q.tsunami ? '<div style="color:#ef4444;font-weight:700;margin-top:5px;">⚠️ Tsunami Warning</div>' : ''}
+            </div>
+        `, {maxWidth:260}).addTo(quakeLayer);
+    });
+
+    const gdacsColors = {FL:'#38bdf8', TC:'#8b5cf6', VO:'#dc2626', WF:'#f97316', DR:'#eab308'};
+    const gdacsLabels = {FL:'Flood', TC:'Cyclone', VO:'Volcano', WF:'Wildfire', DR:'Drought'};
+    const gdacsIcons  = {FL:'💧', TC:'🌀', VO:'🌋', WF:'🔥', DR:'☀️'};
+    recentGdacs.forEach(g => {
+        const color = gdacsColors[g.event_type] || '#94a3b8';
+        const label = gdacsLabels[g.event_type] || g.event_type;
+        const icon  = gdacsIcons[g.event_type]  || '⚠️';
+        const alertColor = g.alert_level === 'Red' ? '#ef4444' : g.alert_level === 'Orange' ? '#f97316' : '#22c55e';
+        L.circleMarker([g.latitude, g.longitude], {
+            radius: 10, fillColor: color, color: '#0f172a',
+            weight: 2, opacity: 1, fillOpacity: 0.88,
+        }).bindPopup(`
+            <div style="min-width:190px;font-family:system-ui;">
+                <div style="font-size:1rem;font-weight:700;color:${color};">${icon} ${label}</div>
+                <span style="background:${alertColor};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;">${g.alert_level}</span>
+                <div style="font-weight:600;margin:5px 0;font-size:0.88rem;">${g.title}</div>
+                <hr style="border-color:#334155;margin:5px 0;">
+                <div style="font-size:0.82rem;color:#94a3b8;">Country: <span style="color:#e2e8f0;">${g.country || '—'}</span></div>
+                <div style="font-size:0.82rem;color:#94a3b8;">Date: <span style="color:#e2e8f0;">${g.event_date}</span></div>
+            </div>
+        `, {maxWidth:260}).addTo(gdacsLayer);
+    });
+
+    recentFires.forEach(f => {
+        const r = Math.max(4, Math.min(12, (f.frp || 10) / 15));
+        L.circleMarker([f.latitude, f.longitude], {
+            radius: r, fillColor: '#fb923c', color: '#ef4444',
+            weight: 1.5, opacity: 1, fillOpacity: 0.85,
+        }).bindPopup(`
+            <div style="min-width:170px;font-family:system-ui;">
+                <div style="font-size:1rem;font-weight:700;color:#f97316;">🔥 Active Fire</div>
+                <hr style="border-color:#334155;margin:5px 0;">
+                <div style="font-size:0.82rem;color:#94a3b8;">Country: <span style="color:#e2e8f0;">${f.country || '—'}</span></div>
+                <div style="font-size:0.82rem;color:#94a3b8;">FRP: <span style="color:#e2e8f0;font-weight:600;">${f.frp ? f.frp.toFixed(1) + ' MW' : '—'}</span></div>
+                <div style="font-size:0.82rem;color:#94a3b8;">Confidence: <span style="color:#e2e8f0;">${f.confidence || '—'}</span></div>
+                <div style="font-size:0.82rem;color:#94a3b8;">Date: <span style="color:#e2e8f0;">${f.acq_date}</span></div>
+            </div>
+        `, {maxWidth:240}).addTo(fireLayer);
+    });
+
+    const layerMap = {quakes: quakeLayer, gdacs: gdacsLayer, fires: fireLayer};
+    function toggleLayer(name) {
+        const btn = document.getElementById('btn-' + name);
+        if (map.hasLayer(layerMap[name])) {
+            map.removeLayer(layerMap[name]);
+            btn.style.opacity = '0.35';
+        } else {
+            map.addLayer(layerMap[name]);
+            btn.style.opacity = '1';
+        }
+    }
+
+    // --- Risk distribution chart ---
+    new Chart(document.getElementById('riskChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Critical', 'High', 'Medium', 'Low'],
+            datasets: [{
+                data: [stats.critical_count, stats.high_count, stats.medium_count, stats.low_count],
+                backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e'],
+                borderColor: '#1e293b',
+                borderWidth: 3,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 15 } }
+            },
+            cutout: '65%',
+        }
+    });
+
+    // --- Top 5 bar chart ---
+    const top5 = risks.slice(0, 5);
+    new Chart(document.getElementById('topRiskChart'), {
+        type: 'bar',
+        data: {
+            labels: top5.map(r => r.location.substring(0, 15)),
+            datasets: [
+                { label: 'Earthquake', data: top5.map(r => r.earthquake_risk), backgroundColor: '#3b82f6' },
+                { label: 'Weather',    data: top5.map(r => r.weather_risk),    backgroundColor: '#8b5cf6' },
+            ]
+        },
+        options: {
+            responsive: true,
+            indexAxis: 'y',
+            scales: {
+                x: { stacked: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                y: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8' } }
+            },
+            plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 12 } } }
+        }
+    });
+
+    // --- Fetch / Pipeline ---
+    async function runFetch() {
+        showLoading('Fetching data in background...');
+        try {
+            const resp = await fetch('/api/fetch/');
+            hideLoading();
+            if (resp.ok) {
+                showToast('Fetch Started', 'Data is being fetched. Refreshing in 30s...', 'high');
+                setTimeout(() => location.reload(), 30000);
+            }
+        } catch(e) {
+            hideLoading();
+            showToast('Fetch Failed', e.message, 'critical');
+        }
+    }
+
+    async function runPipeline() {
+        showLoading('Running pipeline in background...');
+        try {
+            const resp = await fetch('/api/pipeline/');
+            hideLoading();
+            if (resp.ok) {
+                showToast('Pipeline Started', 'Processing data. Refreshing in 60s...', 'high');
+                setTimeout(() => location.reload(), 60000);
+            }
+        } catch(e) {
+            hideLoading();
+            showToast('Pipeline Failed', e.message, 'critical');
+        }
+    }
+
+    // --- Weather search modal ---
+    function openWeatherModal() {
+        const modal = document.getElementById('weatherModal');
+        modal.style.display = 'flex';
+        document.getElementById('weatherPlaceInput').focus();
+        document.getElementById('weatherResult').innerHTML = '';
+    }
+
+    function closeWeatherModal() {
+        document.getElementById('weatherModal').style.display = 'none';
+    }
+
+    // alias for button
+    function openWeatherSearch() { openWeatherModal(); }
+
+    document.getElementById('weatherModal').addEventListener('click', function(e) {
+        if (e.target === this) closeWeatherModal();
+    });
+
+    async function searchWeather() {
+        const place = document.getElementById('weatherPlaceInput').value.trim();
+        if (!place) return;
+        const resultDiv = document.getElementById('weatherResult');
+        resultDiv.innerHTML = '<div class="text-secondary"><i class="fas fa-spinner fa-spin me-2"></i>Fetching weather...</div>';
+
+        try {
+            const resp = await fetch(`/api/weather/?place=${encodeURIComponent(place)}`);
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                resultDiv.innerHTML = `<div style="color:#ef4444;"><i class="fas fa-exclamation-circle me-2"></i>${data.error}</div>`;
+                return;
+            }
+
+            const windDir = data.wind_deg !== null ? degToCompass(data.wind_deg) : '';
+            const iconUrl = data.icon ? `https://openweathermap.org/img/wn/${data.icon}@2x.png` : '';
+
+            resultDiv.innerHTML = `
+                <div style="background:#0f172a;border-radius:10px;padding:16px;">
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        ${iconUrl ? `<img src="${iconUrl}" style="width:60px;height:60px;" alt="">` : ''}
+                        <div>
+                            <div style="font-size:1.3rem;font-weight:600;">${data.place}${data.country ? ', ' + data.country : ''}</div>
+                            <div style="color:#94a3b8;text-transform:capitalize;">${data.description}</div>
+                        </div>
+                        <div style="margin-left:auto;font-size:2rem;font-weight:700;color:#38bdf8;">${data.temperature !== null ? data.temperature.toFixed(1) + '°C' : '--'}</div>
+                    </div>
+                    <div class="row g-2" style="font-size:0.85rem;">
+                        <div class="col-6"><span class="text-secondary">Feels like</span><br><strong>${data.feels_like !== null ? data.feels_like.toFixed(1) + '°C' : '--'}</strong></div>
+                        <div class="col-6"><span class="text-secondary">Humidity</span><br><strong>${data.humidity !== null ? data.humidity + '%' : '--'}</strong></div>
+                        <div class="col-6"><span class="text-secondary">Wind</span><br><strong>${data.wind_speed !== null ? data.wind_speed + ' m/s ' + windDir : '--'}</strong></div>
+                        <div class="col-6"><span class="text-secondary">Pressure</span><br><strong>${data.pressure !== null ? data.pressure + ' hPa' : '--'}</strong></div>
+                        <div class="col-6"><span class="text-secondary">Rainfall (1h)</span><br><strong>${data.rainfall_1h ? data.rainfall_1h + ' mm' : 'None'}</strong></div>
+                        <div class="col-6"><span class="text-secondary">Cloud cover</span><br><strong>${data.clouds !== null ? data.clouds + '%' : '--'}</strong></div>
+                    </div>
+                    ${data.latitude ? `<div class="mt-2" style="font-size:0.75rem;color:#64748b;">${data.latitude.toFixed(4)}°, ${data.longitude.toFixed(4)}° &nbsp;·&nbsp; <a href="https://www.google.com/maps?q=${data.latitude},${data.longitude}" target="_blank" style="color:#38bdf8;">View on map</a></div>` : ''}
+                </div>`;
+        } catch (e) {
+            resultDiv.innerHTML = '<div style="color:#ef4444;">Failed to fetch weather data.</div>';
+        }
+    }
+
+    function degToCompass(deg) {
+        const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+        return dirs[Math.round(deg / 45) % 8];
+    }
+
+    // --- Search/filter risk table ---
+    function filterRiskTable() {
+        const query = document.getElementById('riskSearch').value.toLowerCase();
+        document.querySelectorAll('#riskTableBody tr').forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+        });
+    }
+
+    // --- Toast alerts on load ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const criticalRisks = risks.filter(r => r.risk_level === 'CRITICAL');
+        const highRisks = risks.filter(r => r.risk_level === 'HIGH');
+
+        criticalRisks.forEach((r, i) => {
+            setTimeout(() => showToast(
+                'CRITICAL: ' + r.location,
+                'Risk probability ' + (r.risk_probability * 100).toFixed(0) + '% — ' +
+                (r.anomaly_detected ? 'Anomaly detected!' : 'Elevated risk across sources'),
+                'critical'
+            ), 500 + i * 800);
+        });
+
+        highRisks.slice(0, 3).forEach((r, i) => {
+            setTimeout(() => showToast(
+                'HIGH RISK: ' + r.location,
+                'Risk probability ' + (r.risk_probability * 100).toFixed(0) + '%',
+                'high'
+            ), 500 + criticalRisks.length * 800 + i * 800);
+        });
+
+        if (criticalRisks.length > 0 && 'Notification' in window) {
+            if (Notification.permission === 'granted') {
+                new Notification('Disaster Alert', {
+                    body: criticalRisks.length + ' CRITICAL risk location(s) detected!',
+                    icon: 'https://cdn-icons-png.flaticon.com/512/2913/2913133.png'
+                });
+            } else if (Notification.permission !== 'denied') {
+                Notification.requestPermission();
+            }
+        }
+    });
+</script>
+{% endblock %}

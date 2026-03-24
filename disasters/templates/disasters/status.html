@@ -1,0 +1,323 @@
+{% extends 'disasters/base.html' %}
+
+{% block title %}System Status - Disaster Monitoring System{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2 class="mb-3">
+            <i class="fas fa-server me-2"></i>System Status
+        </h2>
+        <p class="text-secondary">Real-time monitoring of data sources and system health</p>
+    </div>
+</div>
+
+<!-- System Health Overview -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-heartbeat" style="color: var(--accent-green);"></i>
+            </div>
+            <div class="stat-value" style="color: var(--accent-green);">Operational</div>
+            <div class="stat-label">System Status</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-database" style="color: var(--accent-blue);"></i>
+            </div>
+            <div class="stat-value" id="totalAssessments">-</div>
+            <div class="stat-label">Risk Assessments</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-sync-alt" style="color: var(--accent-blue);"></i>
+            </div>
+            <div class="stat-value" id="activeSources">-</div>
+            <div class="stat-label">Active Sources</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-clock" style="color: var(--text-secondary);"></i>
+            </div>
+            <div class="stat-value" id="lastUpdate">-</div>
+            <div class="stat-label">Last Update</div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Sources Status -->
+<div class="row">
+    <div class="col-12">
+        <div class="card-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-plug me-2"></i>Data Sources</span>
+                <button class="btn btn-sm btn-action" onclick="refreshStatus()">
+                    <i class="fas fa-sync-alt me-1"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-dark-custom">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Status</th>
+                                <th>Last Fetch</th>
+                                <th>Records Fetched</th>
+                                <th>New Records</th>
+                                <th>Success</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sourcesTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center text-secondary">
+                                    <i class="fas fa-spinner fa-spin me-2"></i>Loading...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card-dark">
+            <div class="card-header">
+                <i class="fas fa-bolt me-2"></i>Quick Actions
+            </div>
+            <div class="card-body">
+                <div class="d-flex gap-3 flex-wrap">
+                    <button class="btn btn-action" onclick="triggerFetch()">
+                        <i class="fas fa-download me-2"></i>Fetch Data
+                    </button>
+                    <button class="btn btn-action" onclick="triggerAnalysis()">
+                        <i class="fas fa-chart-line me-2"></i>Run Analysis
+                    </button>
+                    <button class="btn btn-action" onclick="triggerPipeline()">
+                        <i class="fas fa-cogs me-2"></i>Full Pipeline
+                    </button>
+                    <a href="{% url 'disasters:dashboard' %}" class="btn btn-outline-action">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- What Msgs Go to n8n -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card-dark">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-paper-plane me-2" style="color:#38bdf8;"></i>What Msgs Go to n8n</span>
+                <span class="text-secondary" style="font-size:0.8rem;">Last 50 alerts sent</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-dark-custom mb-0">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Title / Location</th>
+                            <th>Risk Level</th>
+                            <th>Magnitude</th>
+                            <th>Risk Score</th>
+                            <th>Message</th>
+                            <th>Sent At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in n8n_logs %}
+                        <tr>
+                            <td>
+                                {% if log.alert_type == 'earthquake' %}
+                                    <span style="color:#f97316;"><i class="fas fa-house-damage me-1"></i>Earthquake</span>
+                                {% elif log.alert_type == 'wildfire' %}
+                                    <span style="color:#ef4444;"><i class="fas fa-fire me-1"></i>Wildfire</span>
+                                {% else %}
+                                    <span style="color:#8b5cf6;"><i class="fas fa-chart-line me-1"></i>Risk Alert</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="fw-semibold">{{ log.title }}</div>
+                                {% if log.location %}<div class="text-secondary" style="font-size:0.75rem;">{{ log.location }}</div>{% endif %}
+                            </td>
+                            <td>
+                                {% if log.risk_level and log.risk_level != 'UNKNOWN' %}
+                                    <span class="risk-badge risk-{{ log.risk_level }}">{{ log.risk_level }}</span>
+                                {% else %}-{% endif %}
+                            </td>
+                            <td>{% if log.magnitude %}M{{ log.magnitude }}{% else %}-{% endif %}</td>
+                            <td>{% if log.risk_score %}{{ log.risk_score|floatformat:1 }}{% else %}-{% endif %}</td>
+                            <td style="max-width:300px;font-size:0.78rem;color:#94a3b8;">{{ log.message|truncatechars:120 }}</td>
+                            <td style="font-size:0.8rem;white-space:nowrap;">{{ log.sent_at|date:"M d, Y H:i" }} UTC</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-secondary py-4">
+                                <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                                No alerts sent to n8n yet.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const sourceNames = {
+        'nasa_eonet': 'NASA EONET',
+        'earthquake': 'USGS Earthquake',
+        'weather': 'Weather API',
+        'gdacs': 'GDACS',
+        'nasa_firms': 'NASA FIRMS'
+    };
+
+    async function loadStatus() {
+        try {
+            const response = await fetch("{% url 'disasters:api_status' %}");
+            const data = await response.json();
+            
+            // Update stats
+            document.getElementById('totalAssessments').textContent = data.total_risk_assessments || 0;
+            
+            // Count active sources
+            const activeSources = Object.values(data.latest_fetches).filter(f => f && f.success).length;
+            document.getElementById('activeSources').textContent = `${activeSources}/5`;
+            
+            // Find most recent update
+            let mostRecent = null;
+            for (const fetch of Object.values(data.latest_fetches)) {
+                if (fetch && fetch.last_fetch) {
+                    const fetchTime = new Date(fetch.last_fetch);
+                    if (!mostRecent || fetchTime > mostRecent) {
+                        mostRecent = fetchTime;
+                    }
+                }
+            }
+            
+            if (mostRecent) {
+                const now = new Date();
+                const diffMinutes = Math.floor((now - mostRecent) / 60000);
+                if (diffMinutes < 60) {
+                    document.getElementById('lastUpdate').textContent = `${diffMinutes}m ago`;
+                } else {
+                    const diffHours = Math.floor(diffMinutes / 60);
+                    document.getElementById('lastUpdate').textContent = `${diffHours}h ago`;
+                }
+            } else {
+                document.getElementById('lastUpdate').textContent = 'Never';
+            }
+            
+            // Build table
+            const tbody = document.getElementById('sourcesTableBody');
+            tbody.innerHTML = '';
+            
+            for (const [key, name] of Object.entries(sourceNames)) {
+                const fetch = data.latest_fetches[key];
+                const row = document.createElement('tr');
+                
+                if (fetch) {
+                    const lastFetch = new Date(fetch.last_fetch);
+                    const timeAgo = getTimeAgo(lastFetch);
+                    const statusDot = fetch.success ? 
+                        '<span class="source-dot success"></span>' : 
+                        '<span class="source-dot failed"></span>';
+                    
+                    row.innerHTML = `
+                        <td><strong>${name}</strong></td>
+                        <td>${statusDot} ${fetch.success ? 'Active' : 'Failed'}</td>
+                        <td>${timeAgo}</td>
+                        <td>${fetch.records_fetched}</td>
+                        <td>${fetch.records_new}</td>
+                        <td>${fetch.success ? '<i class="fas fa-check-circle" style="color:var(--accent-green);"></i>' : '<i class="fas fa-times-circle" style="color:var(--risk-critical);"></i>'}</td>
+                    `;
+                } else {
+                    row.innerHTML = `
+                        <td><strong>${name}</strong></td>
+                        <td><span class="source-dot pending"></span> No Data</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                        <td>-</td>
+                    `;
+                }
+                
+                tbody.appendChild(row);
+            }
+        } catch (error) {
+            console.error('Failed to load status:', error);
+            showToast('Error', 'Failed to load system status', 'critical');
+        }
+    }
+
+    function getTimeAgo(date) {
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMinutes = Math.floor(diffMs / 60000);
+        
+        if (diffMinutes < 1) return 'Just now';
+        if (diffMinutes < 60) return `${diffMinutes}m ago`;
+        
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) return `${diffHours}h ago`;
+        
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays}d ago`;
+    }
+
+    function refreshStatus() {
+        showLoading('Refreshing status...');
+        loadStatus().then(() => {
+            hideLoading();
+            showToast('Success', 'Status refreshed', 'high');
+        });
+    }
+
+    async function triggerFetch() {
+        const data = await apiCall("{% url 'disasters:fetch_data' %}", 'Fetching data from all sources...');
+        if (data) {
+            showToast('Success', 'Data fetched successfully', 'high');
+            setTimeout(refreshStatus, 1000);
+        }
+    }
+
+    async function triggerAnalysis() {
+        const data = await apiCall("{% url 'disasters:analyze' %}", 'Running risk analysis...');
+        if (data) {
+            showToast('Success', `Analyzed ${data.locations_analyzed} locations`, 'high');
+            setTimeout(refreshStatus, 1000);
+        }
+    }
+
+    async function triggerPipeline() {
+        const data = await apiCall("{% url 'disasters:full_pipeline' %}", 'Running full pipeline...');
+        if (data) {
+            showToast('Success', 'Pipeline completed successfully', 'high');
+            setTimeout(refreshStatus, 1000);
+        }
+    }
+
+    // Load status on page load
+    document.addEventListener('DOMContentLoaded', loadStatus);
+    
+    // Auto-refresh every 30 seconds
+    setInterval(loadStatus, 30000);
+</script>
+{% endblock %}

@@ -1,0 +1,245 @@
+{% extends "disasters/base.html" %}
+{% block title %}Live Map - Disaster Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+.map-layer-btn {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    white-space: nowrap;
+}
+.map-layer-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+.map-layer-btn.off { opacity: 0.35; }
+#fullmap { height: calc(100vh - 220px); min-height: 500px; border-radius: 0 0 12px 12px; }
+.map-legend {
+    position: absolute;
+    bottom: 28px;
+    left: 12px;
+    background: rgba(15,23,42,0.92);
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.73rem;
+    z-index: 1000;
+    min-width: 130px;
+    backdrop-filter: blur(4px);
+}
+.map-legend .leg-title { color: #94a3b8; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; font-size: 0.68rem; }
+.map-legend .leg-row { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: #e2e8f0; }
+.map-legend .dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+.map-stats {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(15,23,42,0.92);
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 0.75rem;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+.map-stats .stat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; color: #e2e8f0; }
+.map-stats .stat-row:last-child { margin-bottom: 0; }
+</style>
+{% endblock %}
+
+{% block alerts %}
+{% if critical_risks %}
+<div class="alert-banner alert-banner-critical">
+    <i class="fas fa-radiation alert-icon" style="color:var(--risk-critical);"></i>
+    <div class="alert-content">
+        <div class="alert-title" style="color:var(--risk-critical);">CRITICAL — {{ critical_risks|length }} location{{ critical_risks|length|pluralize }}</div>
+        <div class="alert-locations">
+            {% for r in critical_risks %}
+            <span class="alert-location-tag" style="color:var(--risk-critical);"><i class="fas fa-map-marker-alt me-1"></i>{{ r.location }} ({{ r.probability_pct }}%)</span>
+            {% endfor %}
+        </div>
+    </div>
+    <button class="alert-dismiss" onclick="dismissAlert(this)">&times;</button>
+</div>
+{% endif %}
+{% if high_risks %}
+<div class="alert-banner alert-banner-high">
+    <i class="fas fa-exclamation-triangle alert-icon" style="color:var(--risk-high);"></i>
+    <div class="alert-content">
+        <div class="alert-title" style="color:var(--risk-high);">HIGH RISK — {{ high_risks|length }} location{{ high_risks|length|pluralize }}</div>
+        <div class="alert-locations">
+            {% for r in high_risks %}
+            <span class="alert-location-tag" style="color:var(--risk-high);"><i class="fas fa-map-marker-alt me-1"></i>{{ r.location }} ({{ r.probability_pct }}%)</span>
+            {% endfor %}
+        </div>
+    </div>
+    <button class="alert-dismiss" onclick="dismissAlert(this)">&times;</button>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1"><i class="fas fa-globe text-primary me-2"></i>Live Event Map</h4>
+        <p class="text-secondary mb-0" style="font-size:0.85rem;">Last 24 hours &mdash; {{ eq_count }} earthquakes &middot; {{ gdacs_count }} disasters &middot; {{ fire_count }} fires</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+        <div class="d-flex gap-2">
+            <button onclick="toggleLayer('quakes')" id="btn-quakes" class="map-layer-btn" style="background:rgba(59,130,246,0.2);border:1px solid #3b82f6;color:#3b82f6;">
+                <i class="fas fa-house-damage me-1"></i>Earthquakes <span id="cnt-quakes" style="opacity:0.7;">({{ eq_count }})</span>
+            </button>
+            <button onclick="toggleLayer('gdacs')" id="btn-gdacs" class="map-layer-btn" style="background:rgba(249,115,22,0.2);border:1px solid #f97316;color:#f97316;">
+                <i class="fas fa-water me-1"></i>Disasters <span id="cnt-gdacs" style="opacity:0.7;">({{ gdacs_count }})</span>
+            </button>
+            <button onclick="toggleLayer('fires')" id="btn-fires" class="map-layer-btn" style="background:rgba(239,68,68,0.2);border:1px solid #ef4444;color:#ef4444;">
+                <i class="fas fa-fire me-1"></i>Fires <span id="cnt-fires" style="opacity:0.7;">({{ fire_count }})</span>
+            </button>
+        </div>
+        <div class="d-flex gap-1">
+            <input type="text" class="search-input" id="mapSearch" placeholder="Search location..." onkeydown="if(event.key==='Enter')flyToSearch()" style="width:180px;">
+            <button class="btn btn-outline-action" onclick="flyToSearch()" style="padding:6px 12px;"><i class="fas fa-search"></i></button>
+        </div>
+    </div>
+</div>
+
+<div class="card-dark" style="position:relative;">
+    <div id="fullmap"></div>
+
+    <!-- Legend -->
+    <div class="map-legend">
+        <div class="leg-title">Earthquake Mag.</div>
+        <div class="leg-row"><span class="dot" style="background:#22c55e;"></span>&lt; 3.0</div>
+        <div class="leg-row"><span class="dot" style="background:#eab308;"></span>3.0 – 4.4</div>
+        <div class="leg-row"><span class="dot" style="background:#f97316;"></span>4.5 – 5.9</div>
+        <div class="leg-row"><span class="dot" style="background:#ef4444;"></span>6.0+</div>
+        <div class="leg-title mt-2">Disaster Events</div>
+        <div class="leg-row"><span class="dot" style="background:#38bdf8;"></span>Flood</div>
+        <div class="leg-row"><span class="dot" style="background:#8b5cf6;"></span>Cyclone</div>
+        <div class="leg-row"><span class="dot" style="background:#dc2626;"></span>Volcano</div>
+        <div class="leg-row"><span class="dot" style="background:#f97316;"></span>Wildfire</div>
+        <div class="leg-title mt-2">Fire</div>
+        <div class="leg-row"><span class="dot" style="background:#fb923c;"></span>Active Fire</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const recentQuakes   = {{ earthquakes_json|safe }};
+const recentGdacs    = {{ gdacs_json|safe }};
+const recentFires    = {{ wildfires_json|safe }};
+
+// Map init
+const map = L.map('fullmap', { zoomControl: true }).setView([20, 0], 2);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 18,
+}).addTo(map);
+
+const quakeLayer = L.layerGroup().addTo(map);
+const gdacsLayer = L.layerGroup().addTo(map);
+const fireLayer  = L.layerGroup().addTo(map);
+
+function quakeColor(mag) {
+    if (mag >= 6.0) return '#ef4444';
+    if (mag >= 4.5) return '#f97316';
+    if (mag >= 3.0) return '#eab308';
+    return '#22c55e';
+}
+
+// Earthquake markers
+recentQuakes.forEach(q => {
+    const color = quakeColor(q.magnitude);
+    const radius = Math.max(5, Math.min(22, q.magnitude * 3.5));
+    L.circleMarker([q.latitude, q.longitude], {
+        radius, fillColor: color, color: '#0f172a',
+        weight: 1.5, opacity: 1, fillOpacity: 0.82,
+    }).bindPopup(`
+        <div style="min-width:190px;font-family:system-ui;">
+            <div style="font-size:1.15rem;font-weight:800;color:${color};">M${q.magnitude}</div>
+            <div style="font-weight:600;margin:3px 0;font-size:0.9rem;">${q.place}</div>
+            <hr style="border-color:#334155;margin:5px 0;">
+            <div style="font-size:0.82rem;color:#94a3b8;">Depth: <span style="color:#e2e8f0;">${q.depth} km</span></div>
+            <div style="font-size:0.82rem;color:#94a3b8;">Time: <span style="color:#e2e8f0;">${q.event_time}</span></div>
+            <div style="font-size:0.82rem;color:#94a3b8;">Coords: <span style="color:#e2e8f0;">${q.latitude.toFixed(3)}, ${q.longitude.toFixed(3)}</span></div>
+            ${q.tsunami ? '<div style="color:#ef4444;font-weight:700;margin-top:5px;"><i class="fas fa-water"></i> Tsunami Warning</div>' : ''}
+        </div>
+    `, { maxWidth: 260 }).addTo(quakeLayer);
+});
+
+// GDACS markers
+const gdacsColors = { FL:'#38bdf8', TC:'#8b5cf6', VO:'#dc2626', WF:'#f97316', DR:'#eab308' };
+const gdacsLabels = { FL:'Flood', TC:'Cyclone', VO:'Volcano', WF:'Wildfire', DR:'Drought' };
+const gdacsIcons  = { FL:'💧', TC:'🌀', VO:'🌋', WF:'🔥', DR:'☀️' };
+
+recentGdacs.forEach(g => {
+    const color = gdacsColors[g.event_type] || '#94a3b8';
+    const label = gdacsLabels[g.event_type] || g.event_type;
+    const icon  = gdacsIcons[g.event_type]  || '⚠️';
+    const alertColor = g.alert_level === 'Red' ? '#ef4444' : g.alert_level === 'Orange' ? '#f97316' : '#22c55e';
+    L.circleMarker([g.latitude, g.longitude], {
+        radius: 10, fillColor: color, color: '#0f172a',
+        weight: 2, opacity: 1, fillOpacity: 0.88,
+    }).bindPopup(`
+        <div style="min-width:190px;font-family:system-ui;">
+            <div style="font-size:1rem;font-weight:700;color:${color};">${icon} ${label}</div>
+            <span style="background:${alertColor};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;">${g.alert_level}</span>
+            <div style="font-weight:600;margin:5px 0;font-size:0.88rem;">${g.title}</div>
+            <hr style="border-color:#334155;margin:5px 0;">
+            <div style="font-size:0.82rem;color:#94a3b8;">Country: <span style="color:#e2e8f0;">${g.country || '—'}</span></div>
+            <div style="font-size:0.82rem;color:#94a3b8;">Date: <span style="color:#e2e8f0;">${g.event_date}</span></div>
+        </div>
+    `, { maxWidth: 260 }).addTo(gdacsLayer);
+});
+
+// Wildfire markers
+recentFires.forEach(f => {
+    const r = Math.max(4, Math.min(12, (f.frp || 10) / 15));
+    L.circleMarker([f.latitude, f.longitude], {
+        radius: r, fillColor: '#fb923c', color: '#ef4444',
+        weight: 1.5, opacity: 1, fillOpacity: 0.85,
+    }).bindPopup(`
+        <div style="min-width:170px;font-family:system-ui;">
+            <div style="font-size:1rem;font-weight:700;color:#f97316;">🔥 Active Fire</div>
+            <hr style="border-color:#334155;margin:5px 0;">
+            <div style="font-size:0.82rem;color:#94a3b8;">Country: <span style="color:#e2e8f0;">${f.country || '—'}</span></div>
+            <div style="font-size:0.82rem;color:#94a3b8;">FRP: <span style="color:#e2e8f0;font-weight:600;">${f.frp ? f.frp.toFixed(1) + ' MW' : '—'}</span></div>
+            <div style="font-size:0.82rem;color:#94a3b8;">Confidence: <span style="color:#e2e8f0;">${f.confidence || '—'}</span></div>
+            <div style="font-size:0.82rem;color:#94a3b8;">Date: <span style="color:#e2e8f0;">${f.acq_date}</span></div>
+            <div style="font-size:0.78rem;color:#64748b;margin-top:4px;">${f.latitude.toFixed(3)}, ${f.longitude.toFixed(3)}</div>
+        </div>
+    `, { maxWidth: 240 }).addTo(fireLayer);
+});
+
+// Layer toggle
+const layerMap = { quakes: quakeLayer, gdacs: gdacsLayer, fires: fireLayer };
+function toggleLayer(name) {
+    const btn = document.getElementById('btn-' + name);
+    if (map.hasLayer(layerMap[name])) {
+        map.removeLayer(layerMap[name]);
+        btn.classList.add('off');
+    } else {
+        map.addLayer(layerMap[name]);
+        btn.classList.remove('off');
+    }
+}
+
+// Search
+const searchIndex = {};
+recentQuakes.forEach(q => { if (q.place) searchIndex[q.place.toLowerCase()] = [q.latitude, q.longitude]; });
+recentGdacs.forEach(g => { if (g.country) searchIndex[g.country.toLowerCase()] = [g.latitude, g.longitude]; });
+
+function flyToSearch() {
+    const q = document.getElementById('mapSearch').value.toLowerCase().trim();
+    if (!q) return;
+    for (const [name, coords] of Object.entries(searchIndex)) {
+        if (name.includes(q)) {
+            map.flyTo(coords, 7, { duration: 1.2 });
+            return;
+        }
+    }
+    showToast('Not found', 'No matching location for: ' + q, '');
+}
+</script>
+{% endblock %}
