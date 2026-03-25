@@ -1,1 +1,1 @@
-web: gunicorn disaster_system.wsgi
+web: python manage.py migrate && python manage.py collectstatic --noinput && gunicorn disaster_system.wsgi
